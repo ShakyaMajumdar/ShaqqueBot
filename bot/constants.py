@@ -15,7 +15,8 @@ LOG_FILE = pathlib.Path("log/shaqquebot.log")
 
 
 class Emojis(NamedTuple):
-    pass
+    cross = "<:x:818886273871118398>"
+    naught = "<:o:818886375268810753>"
 
 
 class Channels(NamedTuple):
