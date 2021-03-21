@@ -13,13 +13,10 @@ MOVE_TIME_LIMIT = 20
 class Game:
     def __init__(self, cross_player: discord.Member, naught_player: discord.Member):
 
-        self.players = {'X': cross_player, 'O': naught_player}
-
-        self.naught_player: discord.Member = naught_player
-        self.cross_player: discord.Member = cross_player
+        self.players = {"X": cross_player, "O": naught_player}
 
         self.next_turn_toggler = itertools.cycle(self.players.items()).__next__
-        self.next_turn = self.next_turn_toggler()
+        self.next_turn: tuple[str, discord.Member] = self.next_turn_toggler()
 
         self.board: list[list[Union[int, str]]] = [
             [3 * i + 1, 3 * i + 2, 3 * i + 3] for i in range(3)
@@ -29,9 +26,10 @@ class Game:
 
         self.embed_message: Optional[discord.Message] = None
 
-        self.last_move_timestamp = datetime.datetime.now()
+        self.last_move_timestamp: datetime.datetime = datetime.datetime.now()
 
-    def get_board_embed(self):
+    def get_board_embed(self) -> discord.Embed:
+        """Get embed representing current board."""
         board_str = ""
         for row in self.board:
             for col in row:
@@ -46,7 +44,7 @@ class Game:
         embed = discord.Embed(description=board_str)
         return embed
 
-    def _get_game_status(self):
+    def _get_game_status(self) -> str:
         if self._has_won("O"):
             return "O"
         if self._has_won("X"):
@@ -78,7 +76,8 @@ class Game:
 
         return wins_left_diagonal or wins_right_diagonal
 
-    async def update(self, player: discord.Member, pos: int):
+    async def update(self, player: discord.Member, pos: int) -> Optional[str]:
+        """Update game state based on position played and return new game status."""
         if pos in self.empty_spots:
             self.empty_spots.remove(pos)
         else:
@@ -109,15 +108,14 @@ class TicTacToe(commands.Cog):
         self._check_time_out.start()
 
     @commands.command(name="ttt")
-    async def start_new_game(self, ctx: commands.Context, member: discord.Member = None):
-
+    async def start_new_game(
+        self, ctx: commands.Context, member: discord.Member = None
+    ):
+        """Start a new tictactoe game between command invoker and mentioned member."""
         # if member == ctx.author:
         #     raise commands.UserInputError('You can\'t play with yourself.')
 
-        new_game = Game(
-            cross_player=ctx.author,
-            naught_player=member
-        )
+        new_game = Game(cross_player=ctx.author, naught_player=member)
 
         new_game.embed_message = await ctx.send(
             content=f"It's your turn now, {new_game.next_turn[1].mention}!",
@@ -130,8 +128,10 @@ class TicTacToe(commands.Cog):
         self.games_in_progress[new_game.embed_message] = new_game
 
     @commands.Cog.listener()
-    async def on_reaction_add(self, reaction: discord.Reaction, player: discord.Member):
-
+    async def on_reaction_add(
+        self, reaction: discord.Reaction, player: discord.Member
+    ) -> None:
+        """Update games when new reactions are added."""
         if player == self.bot.user:
             return
 
@@ -154,6 +154,9 @@ class TicTacToe(commands.Cog):
 
         status = await game.update(player, pos)
 
+        if status is None:
+            return
+
         if status == "in progress":
             return
         elif status == "X":
@@ -175,8 +178,8 @@ class TicTacToe(commands.Cog):
             pass
 
     @tasks.loop(seconds=1)
-    async def _check_time_out(self):
-
+    async def _check_time_out(self) -> None:
+        """Check for timeouts in all games."""
         for game in self.games_in_progress.values():
             lapsed = datetime.datetime.now() - game.last_move_timestamp
             if lapsed.seconds > MOVE_TIME_LIMIT:
@@ -195,6 +198,6 @@ class TicTacToe(commands.Cog):
                 )
 
 
-def setup(bot: commands.Bot):
+def setup(bot: commands.Bot) -> None:
     """Add TicTacToe Cog"""
     bot.add_cog(TicTacToe(bot))
