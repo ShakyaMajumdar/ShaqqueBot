@@ -1,4 +1,5 @@
 import datetime
+import itertools
 from typing import Union, Optional
 
 import discord
@@ -9,132 +10,41 @@ NUMBER_EMOJIS = {i: f"{i}\N{COMBINING ENCLOSING KEYCAP}" for i in range(1, 10)}
 MOVE_TIME_LIMIT = 20
 
 
-class TicTacToe(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self._reset_game()
+class Game:
+    def __init__(self, cross_player: discord.Member, naught_player: discord.Member):
 
-    def _reset_game(self):
-        self.game_in_play = False
+        self.players = {'X': cross_player, 'O': naught_player}
+
+        self.naught_player: discord.Member = naught_player
+        self.cross_player: discord.Member = cross_player
+
+        self.next_turn_toggler = itertools.cycle(self.players.items()).__next__
+        self.next_turn = self.next_turn_toggler()
 
         self.board: list[list[Union[int, str]]] = [
             [3 * i + 1, 3 * i + 2, 3 * i + 3] for i in range(3)
         ]
+
         self.empty_spots: set[int] = set(range(1, 10))
 
-        self.naught_player: Optional[discord.Member] = None
-        self.cross_player: Optional[discord.Member] = None
+        self.embed_message: Optional[discord.Message] = None
 
-        self.next_turn: Optional[tuple[str, str]] = None
+        self.last_move_timestamp = datetime.datetime.now()
 
-        self.board_embed_message: Optional[discord.Message] = None
-
-        self.last_move_timestamp = None
-
-    def _get_board_embed(self):
-        s = ""
-        for r in self.board:
-            for c in r:
-                if isinstance(c, int):
-                    s += NUMBER_EMOJIS[c]
-                elif c == "O":
-                    s += ":o:"
+    def get_board_embed(self):
+        board_str = ""
+        for row in self.board:
+            for col in row:
+                if isinstance(col, int):
+                    board_str += NUMBER_EMOJIS[col]
+                elif col == "O":
+                    board_str += ":o:"
                 else:
-                    s += ":x:"
-            s += "\n"
+                    board_str += ":x:"
+            board_str += "\n"
 
-        embed = discord.Embed(description=s)
+        embed = discord.Embed(description=board_str)
         return embed
-
-    @commands.command(name="ttt")
-    async def start(self, ctx: commands.Context, member: discord.Member = None):
-
-        if self.game_in_play:
-            await ctx.send("One game is already in progress!")
-            return
-
-        """if member == ctx.author:
-            raise commands.UserInputError('You can\'t play with yourself.')"""
-
-        self.game_in_play = True
-
-        self.cross_player = ctx.author
-        self.naught_player = member
-
-        self.next_turn = self.cross_player, "X"
-
-        embed_message = await ctx.send(
-            content=f"It's your turn now, {self.next_turn[0].mention}!",
-            embed=self._get_board_embed(),
-        )
-        self.board_embed_message = embed_message
-
-        for emoji in NUMBER_EMOJIS.values():
-            await embed_message.add_reaction(emoji)
-
-        self.last_move_timestamp = datetime.datetime.now()
-        self._check_time_out.start()
-
-    @commands.Cog.listener()
-    async def on_reaction_add(self, reaction: discord.Reaction, player: discord.Member):
-
-        self.last_move_timestamp = datetime.datetime.now()
-
-        if player == self.bot.user:
-            return
-
-        # await reaction.remove(player)
-
-        if (
-            not self.game_in_play
-            or reaction.message != self.board_embed_message
-            or player != self.next_turn[0]
-        ):
-            return
-
-        try:
-            pos = int(str(reaction.emoji)[0])
-        except ValueError:
-            return
-
-        if pos in self.empty_spots:
-            self.empty_spots.remove(pos)
-        else:
-            return
-
-        await reaction.remove(self.bot.user)
-
-        self.board[(pos - 1) // 3][(pos - 1) % 3] = self.next_turn[1]
-
-        self.next_turn = (
-            (self.cross_player, "X")
-            if self.next_turn[1] == "O"
-            else (self.naught_player, "O")
-        )
-
-        await self.board_embed_message.edit(
-            content=f"It's your turn now, {self.next_turn[0].mention}!",
-            embed=self._get_board_embed(),
-        )
-
-        status = self._get_game_status()
-
-        if status == "in progress":
-            return
-        elif status == "X":
-            await self.board_embed_message.channel.send(
-                f"{self.cross_player.mention} has won the game!"
-            )
-        elif status == "O":
-            await self.board_embed_message.channel.send(
-                f"{self.naught_player.mention} has won the game!"
-            )
-        else:
-            await self.board_embed_message.channel.send("Game ended in a draw!")
-
-        self._check_time_out.cancel()
-        # await self.board_embed_message.clear_reactions()
-        self._reset_game()
 
     def _get_game_status(self):
         if self._has_won("O"):
@@ -160,32 +70,129 @@ class TicTacToe(commands.Cog):
         wins_left_diagonal = True
         wins_right_diagonal = True
 
-        for i, row in enumerate(self.board):
-            for j, item in enumerate(row):
-                if i == j and item != piece:
-                    wins_left_diagonal = False
+        for i in range(3):
+            if self.board[i][i] != piece:
+                wins_left_diagonal = False
+            if self.board[i][2 - i] != piece:
+                wins_right_diagonal = False
 
-                if i + j == 2 and item != piece:
-                    wins_right_diagonal = False
+        return wins_left_diagonal or wins_right_diagonal
 
-        return any((wins_left_diagonal, wins_right_diagonal))
+    async def update(self, player: discord.Member, pos: int):
+        if pos in self.empty_spots:
+            self.empty_spots.remove(pos)
+        else:
+            return
+
+        if player != self.next_turn[1]:
+            return
+
+        print("here")
+        self.last_move_timestamp = datetime.datetime.now()
+
+        self.board[(pos - 1) // 3][(pos - 1) % 3] = self.next_turn[0]
+
+        await self.embed_message.edit(
+            content=f"It's your turn now, {self.next_turn[1].mention}!",
+            embed=self.get_board_embed(),
+        )
+        self.next_turn = self.next_turn_toggler()
+
+        return self._get_game_status()
+
+
+class TicTacToe(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.games_in_progress = {}
+
+        self._check_time_out.start()
+
+    @commands.command(name="ttt")
+    async def start_new_game(self, ctx: commands.Context, member: discord.Member = None):
+
+        # if member == ctx.author:
+        #     raise commands.UserInputError('You can\'t play with yourself.')
+
+        new_game = Game(
+            cross_player=ctx.author,
+            naught_player=member
+        )
+
+        new_game.embed_message = await ctx.send(
+            content=f"It's your turn now, {new_game.next_turn[1].mention}!",
+            embed=new_game.get_board_embed(),
+        )
+
+        for emoji in NUMBER_EMOJIS.values():
+            await new_game.embed_message.add_reaction(emoji)
+
+        self.games_in_progress[new_game.embed_message] = new_game
+
+    @commands.Cog.listener()
+    async def on_reaction_add(self, reaction: discord.Reaction, player: discord.Member):
+
+        if player == self.bot.user:
+            return
+
+        if reaction.message not in self.games_in_progress:
+            return
+
+        game = self.games_in_progress[reaction.message]
+
+        try:
+            await reaction.remove(player)
+        except discord.Forbidden:
+            pass
+
+        try:
+            pos = int(str(reaction.emoji)[0])
+        except ValueError:
+            return
+
+        await reaction.remove(self.bot.user)
+
+        status = await game.update(player, pos)
+
+        if status == "in progress":
+            return
+        elif status == "X":
+            await game.embed_message.channel.send(
+                f"{game.players['X'].mention} has won the game!"
+            )
+        elif status == "O":
+            await game.embed_message.channel.send(
+                f"{game.players['X'].mention} has won the game!"
+            )
+        else:
+            await game.embed_message.channel.send("Game ended in a draw!")
+
+        del self.games_in_progress[game.embed_message]
+
+        try:
+            await game.embed_message.clear_reactions()
+        except discord.Forbidden:
+            pass
 
     @tasks.loop(seconds=1)
     async def _check_time_out(self):
-        if not self.game_in_play:
-            return
-        lapsed = datetime.datetime.now() - self.last_move_timestamp
-        if lapsed.seconds > MOVE_TIME_LIMIT:
-            await self.board_embed_message.channel.send(
-                f"{self.next_turn[0].mention} your time is up! Ending game now."
-            )
-            self._check_time_out.cancel()
-            # await self.board_embed_message.clear_reactions()
-            self._reset_game()
-        elif lapsed.seconds == MOVE_TIME_LIMIT - 5:
-            await self.board_embed_message.channel.send(
-                f"Hurry up {self.next_turn[0].mention}! You have 5 seconds remaining."
-            )
+
+        for game in self.games_in_progress.values():
+            lapsed = datetime.datetime.now() - game.last_move_timestamp
+            if lapsed.seconds > MOVE_TIME_LIMIT:
+                await game.embed_message.channel.send(
+                    f"{game.next_turn[1].mention} your time is up! Ending game now."
+                )
+                del self.games_in_progress[game.embed_message]
+                try:
+                    await game.embed_message.clear_reactions()
+                except discord.Forbidden:
+                    pass
+
+            elif lapsed.seconds == MOVE_TIME_LIMIT - 5:
+                await game.embed_message.channel.send(
+                    f"Hurry up {game.next_turn[1].mention}! You have 5 seconds remaining."
+                )
 
 
 def setup(bot: commands.Bot):
