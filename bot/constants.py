@@ -7,6 +7,10 @@ import yaml
 # env vars
 PREFIX = os.getenv("PREFIX") or "!"
 TOKEN = os.getenv("TOKEN")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+RAPIDAPI_LIVESCORE6_HOST = os.getenv("RAPIDAPI_LIVESCORE6_HOST")
+
+
 BOT_REPO_URL = "https://github.com/ShakyaMajumdar/ShaqqueBot"
 
 # paths

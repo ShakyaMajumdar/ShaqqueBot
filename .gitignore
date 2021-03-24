@@ -2,3 +2,4 @@
 .idea
 logs
 bot/logs
+bot/exts/_test.py
