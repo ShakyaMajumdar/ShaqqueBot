@@ -1,4 +1,12 @@
+import discord
 from discord.ext import commands
+
+
+def is_bot_author():
+    async def predicate(ctx: commands.Context):
+        return ctx.author.id == 787351231332483102
+
+    return commands.check(predicate)
 
 
 class Miscellaneous(commands.Cog):
@@ -16,6 +24,14 @@ class Miscellaneous(commands.Cog):
     async def ping(self, ctx: commands.Context) -> None:
         """Send bot ping"""
         await ctx.send(f"Pong! {round(self.bot.latency, 2)} ms")
+
+    @commands.command(pass_context=False)
+    @is_bot_author()
+    async def echo(
+        self, channel: discord.TextChannel, message_id: int, *, reply_message: str
+    ):
+        message = await channel.fetch_message(message_id)
+        await message.reply(reply_message)
 
 
 def setup(bot: commands.Bot) -> None:
